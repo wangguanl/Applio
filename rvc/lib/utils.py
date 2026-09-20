@@ -1,6 +1,8 @@
 import os
 import sys
 import soxr
+import torch
+import torchaudio
 import librosa
 import soundfile as sf
 import numpy as np
@@ -58,6 +60,28 @@ def load_audio(file, sample_rate):
         raise RuntimeError(f"An error occurred loading the audio: {error}")
 
     return audio.flatten()
+
+
+def load_audio_ta(file, sample_rate):
+    try:
+        file = file.strip(" ").strip('"').strip("\n").strip('"').strip(" ")
+        audio, sr = sf.read(file)
+        audio = np.asarray(audio, dtype=np.float32)
+        if len(audio.shape) > 1:
+            audio = librosa.to_mono(audio.T)
+        if sr != sample_rate:
+            transform = torchaudio.transforms.Resample(
+                orig_freq=sr,
+                new_freq=sample_rate,
+                lowpass_filter_width=128,
+            )
+            audio = torch.from_numpy(audio).unsqueeze(0)
+            audio = transform(audio).squeeze(0).contiguous().numpy()
+
+    except Exception as error:
+        raise RuntimeError(f"An error occurred loading the audio: {error}")
+
+    return audio
 
 
 def load_audio_infer(

@@ -118,7 +118,9 @@ except FileNotFoundError:
 config.data.training_files = os.path.join(experiment_dir, "filelist.txt")
 
 torch.backends.cudnn.deterministic = False
-torch.backends.cudnn.benchmark = True
+if os.name == "nt":  # Windows
+    torch.backends.cudnn.benchmark = True
+
 # TF32 settings, should improve performance in some cases
 try:
     torch.set_float32_matmul_precision("high")
@@ -700,6 +702,8 @@ def train_and_evaluate(
                     grad_norm_d = commons.grad_norm(net_d.parameters())
                     optim_d.step()
 
+            net_d.requires_grad_(False)
+
             with torch.amp.autocast(
                 device_type="cuda", enabled=use_amp, dtype=train_dtype
             ):
@@ -735,10 +739,10 @@ def train_and_evaluate(
             loss_gen, _ = generator_loss(y_d_hat_g)
             loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl
 
-            if loss_gen_all < lowest_value["value"]:
+            if loss_gen_all.item() < lowest_value["value"]:
                 lowest_value = {
                     "step": global_step,
-                    "value": loss_gen_all,
+                    "value": loss_gen_all.item(),
                     "epoch": epoch,
                 }
             optim_g.zero_grad()
@@ -752,6 +756,8 @@ def train_and_evaluate(
                 loss_gen_all.backward()
                 grad_norm_g = commons.grad_norm(net_g.parameters())
                 optim_g.step()
+
+            net_d.requires_grad_(True)
 
             global_step += 1
 
@@ -889,7 +895,7 @@ def train_and_evaluate(
 
     if rank == 0:
         # Print training progress
-        lowest_value_rounded = round(lowest_value["value"].detach().item(), 3)
+        lowest_value_rounded = round(lowest_value["value"], 3)
 
         record = f"{model_name} | epoch={epoch} | step={global_step} | {epoch_recorder.record()}"
         if epoch > 1:
@@ -927,7 +933,6 @@ def train_and_evaluate(
 
         # Check completion
         if epoch >= custom_total_epoch:
-            lowest_value_rounded = round(lowest_value["value"].detach().item(), 3)
             print(
                 f"Training has been successfully completed with {epoch} epoch, {global_step} steps and {round(loss_gen_all.item(), 3)} loss gen."
             )
